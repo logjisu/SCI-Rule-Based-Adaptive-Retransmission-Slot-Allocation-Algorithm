@@ -80,12 +80,17 @@ public:
    * \brief ~NrMacSchedulerUeInfo deconstructor
    */
   virtual ~NrMacSchedulerUeInfo ();
-
+  // 가상 메서드를 추가하여 자식 클래스에서 재정의할 수 있도록 함
+  // virtual uint64_t GetAge() const { return 0; }  // 기본값은 0으로 설정
   /**
    * \brief GetDlRBG
    * \param ue UE pointer from which obtain the value
    * \return
    */
+  uint16_t GetRnti () const
+  {
+    return m_rnti;
+  }
   static uint32_t & GetDlRBG (const UePtr &ue);
   /**
    * \brief GetUlRBG

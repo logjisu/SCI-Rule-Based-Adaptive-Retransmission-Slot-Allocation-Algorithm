@@ -191,6 +191,7 @@ public:
     std::vector<uint8_t> m_TraffPCgr;
     std::vector<Time> m_TraffInitCgr;
     std::vector<Time> m_TraffDeadlineCgr;
+    std::vector<uint64_t> m_ageList;  // Age 정보를 저장할 변수 추가
   };
 
   virtual void SchedUlCgrInfoReq (const SchedUlCgrInfoReqParameters &params) = 0;

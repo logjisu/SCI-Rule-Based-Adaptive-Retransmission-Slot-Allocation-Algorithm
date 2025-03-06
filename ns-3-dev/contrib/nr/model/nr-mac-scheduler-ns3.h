@@ -259,6 +259,9 @@ public:
     */
   ~NrMacSchedulerNs3 () override;
 
+  void SetAge(uint16_t ueRnti, uint64_t age);   // age 설정 함수
+  uint64_t GetAge(uint16_t ueRnti) const;       // age 반환 함수
+
   /**
    * \brief Install the AMC for the DL part
    * \param dlAmc DL AMC
@@ -888,6 +891,7 @@ private:
   void DoScheduleUlresources_configuredGrant (PointInFTPlane *spoint, const std::list<uint16_t> &rntiList) const;
 
 protected:
+  std::vector<uint64_t> ageList;
   /**
    * \brief Get the bwp id of this MAC
    * \return the bwp id
@@ -907,7 +911,6 @@ protected:
 
 private:
   std::unordered_map<uint16_t, std::shared_ptr<NrMacSchedulerUeInfo> > m_ueMap; //!< The map of between RNTI and their data
-
   /**
    * Map of previous allocated UE per RBG
    * (used to retrieve info from UL-CQI)
