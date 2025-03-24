@@ -38,7 +38,7 @@
  class NrControlMessage;
  class NrRarMessage;
  class BeamConfId;
- extern std::unordered_map<uint16_t, uint64_t> m_packetCreationTimeMap; // RNTI와 패킷 생성 시간을 저장할 맵
+ extern std::unordered_map<uint16_t, uint64_t> m_패킷생성시간; // RNTI와 패킷 생성 시간을 저장할 맵
  /**
   * \ingroup gnb-mac
   * \brief The MAC class for the gnb
@@ -83,7 +83,12 @@
     * \brief ~NrGnbMac
     */
    virtual ~NrGnbMac (void) override;
- 
+
+   void StartPeriodicAgeUpdate();
+   void IncrementAgeOnNoPacket(uint16_t rnti, int deadlineMs);
+   void ResetAgeOnPacketProcessed(uint16_t rnti);
+   void PeriodicAgeUpdate();
+
    /**
     * \brief Sets the number of RBs per RBG. Currently it can be 
     * configured by the user, while in the future it will be configured 

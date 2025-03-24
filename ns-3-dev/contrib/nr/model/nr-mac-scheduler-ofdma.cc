@@ -17,13 +17,12 @@
  *
  */
 
- #define NS_LOG_APPEND_CONTEXT                                            \
- do                                                                     \
-   {                                                                    \
-     std::clog << " [ CellId " << GetCellId() << ", bwpId "             \
-               << GetBwpId () << "] ";                                  \
-   }                                                                    \
- while (false);
+#define NS_LOG_APPEND_CONTEXT                                        \
+do{                                                                  \
+  std::clog << " [ CellId " << GetCellId() << ", bwpId "             \
+               << GetBwpId () << "] ";                               \
+}                                                                    \
+while (false);
 
 #include "nr-mac-scheduler-ofdma.h"
 #include <ns3/log.h>
@@ -35,28 +34,27 @@ NS_LOG_COMPONENT_DEFINE ("NrMacSchedulerOfdma");
 NS_OBJECT_ENSURE_REGISTERED (NrMacSchedulerOfdma);
 
 TypeId
-NrMacSchedulerOfdma::GetTypeId (void)
-{
- static TypeId tid = TypeId ("ns3::NrMacSchedulerOfdma")
-   .SetParent<NrMacSchedulerTdma> ()
-   .AddTraceSource ("SymPerBeam",
-                    "Number of assigned symbol per beam. Gets called every time an assignment is made",
-                    MakeTraceSourceAccessor (&NrMacSchedulerOfdma::m_tracedValueSymPerBeam),
-                    "ns3::TracedValueCallback::Uint32")
+NrMacSchedulerOfdma::GetTypeId (void){
+  static TypeId tid = TypeId ("ns3::NrMacSchedulerOfdma")
+  .SetParent<NrMacSchedulerTdma> ()
+  .AddTraceSource ("SymPerBeam",
+                  "Number of assigned symbol per beam. Gets called every time an assignment is made",
+                  MakeTraceSourceAccessor (&NrMacSchedulerOfdma::m_tracedValueSymPerBeam),
+                  "ns3::TracedValueCallback::Uint32")
 
-    // Configured Grant - New schedulers (SymOFDMA, RBOFDMA)
-    .AddAttribute ("schOFDMA",
-                   "schedule with SymOFDMA if it is true, and with RBOFDMA if it is false",
-                   UintegerValue (1),
-                   MakeUintegerAccessor (&NrMacSchedulerOfdma::SetScheduler,
-                                         &NrMacSchedulerOfdma::GetScheduler),
-                   MakeUintegerChecker<uint8_t> ())
+  // Configured Grant - New schedulers (SymOFDMA, RBOFDMA)
+  .AddAttribute ("schOFDMA",
+                  "schedule with SymOFDMA if it is true, and with RBOFDMA if it is false",
+                  UintegerValue (1),
+                  MakeUintegerAccessor (&NrMacSchedulerOfdma::SetScheduler,
+                                        &NrMacSchedulerOfdma::GetScheduler),
+                  MakeUintegerChecker<uint8_t> ())
  ;
- return tid;
+  return tid;
 }
 
-NrMacSchedulerOfdma::NrMacSchedulerOfdma () : NrMacSchedulerTdma ()
-{
+NrMacSchedulerOfdma::NrMacSchedulerOfdma () : NrMacSchedulerTdma (){
+
 }
 
 /**
@@ -74,71 +72,59 @@ NrMacSchedulerOfdma::NrMacSchedulerOfdma () : NrMacSchedulerTdma ()
 * \f$ sym_{b} = BufSize(b) * \frac{symAvail}{BufSizeTotal} \f$
 */
 NrMacSchedulerOfdma::BeamSymbolMap
-NrMacSchedulerOfdma::GetSymPerBeam (uint32_t symAvail,
-                                       const NrMacSchedulerNs3::ActiveUeMap &activeDl) const
-{
- NS_LOG_FUNCTION (this);
+NrMacSchedulerOfdma::GetSymPerBeam (uint32_t symAvail, const NrMacSchedulerNs3::ActiveUeMap &activeDl) const{
+  NS_LOG_FUNCTION (this);
 
- GetSecond GetUeVector;
- GetSecond GetUeBufSize;
- GetFirst GetBeamId;
- double bufTotal = 0.0;
- uint8_t symUsed = 0;
- BeamSymbolMap ret;
+  GetSecond GetUeVector;
+  GetSecond GetUeBufSize;
+  GetFirst GetBeamId;
+  double bufTotal = 0.0;
+  uint8_t symUsed = 0;
+  BeamSymbolMap ret;
 
- // Compute buf total
- for (const auto &el : activeDl)
-   {
-     for (const auto & ue : GetUeVector (el))
-       {
-         bufTotal += GetUeBufSize (ue);
-       }
-   }
+  // Compute buf total
+  for (const auto &el : activeDl){
+    for (const auto & ue : GetUeVector (el)){
+      bufTotal += GetUeBufSize (ue);
+    }
+  }
 
- for (const auto &el : activeDl)
-   {
-     uint32_t bufSizeBeam = 0;
-     for (const auto &ue : GetUeVector (el))
-       {
-         bufSizeBeam += GetUeBufSize (ue);
-       }
+  for (const auto &el : activeDl){
+    uint32_t bufSizeBeam = 0;
+    for (const auto &ue : GetUeVector (el)){
+      bufSizeBeam += GetUeBufSize (ue);
+    }
 
-     double tmp = symAvail / bufTotal;
-     uint32_t symForBeam = static_cast<uint32_t> (bufSizeBeam * tmp);
-     symUsed += symForBeam;
-     ret.emplace (std::make_pair (GetBeamId (el), symForBeam));
-     NS_LOG_DEBUG ("Assigned to beam " << GetBeamId (el) << " symbols " << symForBeam);
-   }
+    double tmp = symAvail / bufTotal;
+    uint32_t symForBeam = static_cast<uint32_t> (bufSizeBeam * tmp);
+    symUsed += symForBeam;
+    ret.emplace (std::make_pair (GetBeamId (el), symForBeam));
+    NS_LOG_DEBUG ("Assigned to beam " << GetBeamId (el) << " symbols " << symForBeam);
+  }
 
- NS_ASSERT (symAvail >= symUsed);
- if (symAvail - symUsed > 0)
-   {
-     uint8_t symToRedistribute = symAvail - symUsed;
-     while (symToRedistribute > 0)
-       {
-         BeamSymbolMap::iterator min = ret.end ();
-         for (auto it = ret.begin (); it != ret.end (); ++it)
-           {
-             if (min == ret.end () || it->second < min->second)
-               {
-                 min = it;
-               }
-           }
-         min->second += 1;
-         symToRedistribute--;
-         NS_LOG_DEBUG ("Assigned to beam " << min->first <<
-                       " an additional symbol, for a total of " << min->second);
-       }
-   }
+  NS_ASSERT (symAvail >= symUsed);
+  if (symAvail - symUsed > 0){
+    uint8_t symToRedistribute = symAvail - symUsed;
+    while (symToRedistribute > 0){
+      BeamSymbolMap::iterator min = ret.end ();
+      for (auto it = ret.begin (); it != ret.end (); ++it){
+        if (min == ret.end () || it->second < min->second){
+          min = it;
+        }
+      }
+      min->second += 1;
+      symToRedistribute--;
+      NS_LOG_DEBUG ("Assigned to beam " << min->first << " an additional symbol, for a total of " << min->second);
+    }
+  }
 
  // Trigger the trace source firing, using const_cast as we don't change
  // the internal state of the class
- for (const auto & v : ret)
-   {
-     const_cast<NrMacSchedulerOfdma*> (this)->m_tracedValueSymPerBeam = v.second;
-   }
+  for (const auto & v : ret){
+    const_cast<NrMacSchedulerOfdma*> (this)->m_tracedValueSymPerBeam = v.second;
+  }
 
- return ret;
+  return ret;
 }
 
 /**
@@ -638,7 +624,7 @@ NrMacSchedulerOfdma::GetTpc () const
  return 1; // 1 is mapped to 0 for Accumulated mode, and to -1 in Absolute mode TS38.213 Table Table 7.1.1-1
 }
 
-// Configured Grant - New schedulers (Sym-OFDMA and RB-OFDMA)
+// CG, Configured Grant - New schedulers (Sym-OFDMA and RB-OFDMA)
 
 NrMacSchedulerNs3::BeamSymbolMap
 NrMacSchedulerOfdma::AssignULRBG (uint32_t symAvail, const ActiveUeMap &activeUl) const/*********************************************<UL RBG를 할당하는 부분>*************************************/
@@ -1398,19 +1384,14 @@ NrMacSchedulerOfdma::CreateUlDci (PointInFTPlane *spoint,
 
 
 std::shared_ptr<DciInfoElementTdma>
-NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
-                                     const std::shared_ptr<NrMacSchedulerUeInfo> &ueInfo,
-                                     uint32_t maxSym) const/************************************************************<ConfiguredGrant에서 RBG 할당하는 구역>***************************************************/
-{
+NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint, const std::shared_ptr<NrMacSchedulerUeInfo> &ueInfo, uint32_t maxSym) const{// <ConfiguredGrant에서 RBG 할당하는 구역>
+
  NS_LOG_FUNCTION (this);
 
- uint32_t tbs = m_ulAmc->CalculateTbSize (ueInfo->m_ulMcs,
-                                          ueInfo->m_ulRBG * GetNumRbPerRbg ());
+ uint32_t tbs = m_ulAmc->CalculateTbSize (ueInfo->m_ulMcs, ueInfo->m_ulRBG * GetNumRbPerRbg ());
 
- // If is less than 7 (3 mac header, 2 rlc header, 2 data), then we can't
- // transmit any new data, so don't create dci.
- // However, to comply with the constraints imposed in the new scheduler (SymOFDMA and RBOFDMA),
- // this condition will not be taken into account.
+ // 만약 TBS(Transport Block Size)가 7보다 작다면 (맥 헤더 3개, rlc 헤더 2개, 데이터 2개), 새로운 데이터를 전송할 수 없으므로 dci를 생성하지 마세요.
+ // 그러나, 새로운 스케줄러(SymOFDMA 및 RBOFDMA)에 부과된 제약 조건을 준수하기 위해 이 조건은 고려되지 않습니다.
  /*
  if (tbs < 7)
    {
@@ -1419,7 +1400,7 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
      return nullptr;
    }*/
 
- // Calculate the number of RBs to be assigned per symbol
+ // 심볼당 할당할 RBG(Resource Block Group) 수 계산
  uint32_t RBGNum = ueInfo->m_ulRBG /ueInfo->m_ulSym ;
  std::vector<uint8_t> rbgBitmask = GetUlNotchedRbgMask ();
 
@@ -1433,7 +1414,7 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
  uint32_t lastRbg = spoint->m_rbg;
  uint32_t assigned = RBGNum;
 
- // Required for scheduling SymOFDMA
+// SymOFDMA 스케줄링을 위한 조건
  if (m_schType_OFDMA != 1)
  {
      if (GetBandwidthInRbg ()-lastRbg < RBGNum)
@@ -1444,9 +1425,12 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
        }
  }
 
+// 실패한 UE를 위한 재전송 슬롯 할당 로직 추가
+// if (ueInfo->m_needRetransmission){
+//   NS_LOG_INFO("[Retransmission] Allocating extra resources for UE " << ueInfo->m_rnti);
+// }
 
- // Limit the places in which we can transmit following the starting point
- // and the number of RBG assigned to the UE
+// 시작 지점 다음에 전송할 수 있는 장소와 UE에 할당된 RBG 수 제한
  for (uint32_t i = 0; i < GetBandwidthInRbg (); ++i)
    {
      if (i >= spoint->m_rbg && RBGNum > 0 && rbgBitmask[i] == 1)
@@ -1456,14 +1440,12 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
        }
      else
        {
-         // Set to 0 the position < spoint->m_rbg OR the remaining RBG when
-         // we already assigned the number of requested RBG
+         // 요청된 RBG 수를 이미 할당했을 때 위치 < spoint->m_rbg 또는 나머지 RBG를 0으로 설정합니다
          rbgBitmask[i] = 0;
        }
    }
 
- NS_ASSERT_MSG (RBGNum == 0,
-                "If you see this message, it means that the AssignRBG and CreateDci method are unaligned");
+ NS_ASSERT_MSG (RBGNum == 0, "이 메시지가 표시되면, AssignRBG와 CreateDci 메서드가 정렬되지 않았음을 의미합니다.");
 
  NS_LOG_INFO ("UE " << ueInfo->m_rnti << " assigned RBG from " <<
               static_cast<uint32_t> (spoint->m_rbg) << " to " <<
@@ -1478,6 +1460,7 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
 
   spoint->m_rbg = lastRbg + 1;
 
+  // DCI 객체 생성
   std::shared_ptr<DciInfoElementTdma> dci = std::make_shared<DciInfoElementTdma>
      (ueInfo->m_rnti, DciInfoElementTdma::UL, spoint->m_sym, (ueInfo->m_ulSym), ulMcs,
       ulTbs, ndi, rv, DciInfoElementTdma::DATA, GetBwpId (), GetTpc());
@@ -1504,15 +1487,13 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint,
 }
 
 void
-NrMacSchedulerOfdma::SetScheduler (uint8_t v)
-{
- m_schType_OFDMA= v;
+NrMacSchedulerOfdma::SetScheduler (uint8_t v){
+  m_schType_OFDMA= v;
 }
 
 uint8_t
-NrMacSchedulerOfdma::GetScheduler () const
-{
- return m_schType_OFDMA;
+NrMacSchedulerOfdma::GetScheduler () const{
+  return m_schType_OFDMA;
 }
 
 } // namespace ns3

@@ -55,14 +55,14 @@ private:
 };
 
 // 긴급 패킷 태그 클래스
-class PacketUrgencyTag : public Tag
+class PacketPriorityTag : public Tag
 {
 public:
-  PacketUrgencyTag();
-  PacketUrgencyTag(uint32_t Urgency);
+  PacketPriorityTag();
+  PacketPriorityTag(uint32_t Priority);
 
-  void SetUrgency(uint32_t Urgency);
-  uint32_t GetUrgency() const;
+  void SetPriority(uint32_t Priority);
+  uint32_t GetPriority() const;
 
   void Serialize(TagBuffer i) const override;
   void Deserialize(TagBuffer i) override;
@@ -73,7 +73,7 @@ public:
   TypeId GetInstanceTypeId() const override;
 
 private:
-  uint32_t m_Urgency;
+  uint32_t m_Priority;
 };
 
 #endif // PACKET_TAGS_H

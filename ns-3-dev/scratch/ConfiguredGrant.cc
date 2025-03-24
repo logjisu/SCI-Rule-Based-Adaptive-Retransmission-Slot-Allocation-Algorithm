@@ -18,9 +18,9 @@
  */
 
 /*
- * 설명: 이 코드는 UE에서 gNB로 100 패킷을 전송합니다. 동적 또는 Configured-Grant(CG) 스케줄러와
- * 함께 작동합니다. (두 스케줄러 모두 동시에 작동할 수 없습니다.)
- *
+ * 설명: 이 코드는 UE에서 gNB로 100 패킷을 전송합니다. 동적 또는 Configured-Grant(CG) 스케줄러와 함께 작동합니다.
+ * (두 스케줄러 모두 동시에 작동할 수 없습니다.)
+ * 
  * CG의 경우 구성 시간이 선택됩니다. 이 시간에 UE는 요구 사항을 gNB로 전송합니다.
  * gNB는 각 UE에 대한 CG를 생성합니다.
  *
@@ -30,36 +30,33 @@
  * 이 코드는 "cttc-3gpp-channel-simple-ran.cc"(5G-LENA) 코드를 기반으로 작성되었습니다.
  */
 
+#include "ns3/a-packet-tags.h"
+#include "ns3/antenna-module.h"
 #include "ns3/core-module.h"
-#include "ns3/network-module.h"
-#include "ns3/mobility-module.h"
 #include "ns3/config-store.h"
+#include <cstdlib>
+#include <ctime>
+#include "ns3/eps-bearer-tag.h"
+#include "ns3/flow-monitor-module.h"
+#include "ns3/ipv4-global-routing-helper.h"
+#include "ns3/internet-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/network-module.h"
 #include "ns3/nr-helper.h"
 #include "ns3/nr-module.h"
 #include "ns3/nr-point-to-point-epc-helper.h"
-#include "ns3/ipv4-global-routing-helper.h"
-#include "ns3/internet-module.h"
-#include "ns3/eps-bearer-tag.h"
 #include "ns3/log.h"
-#include "ns3/antenna-module.h"
-#include "ns3/flow-monitor-module.h"
-#include "ns3/a-packet-tags.h"
-#include <cstdlib>  // 랜덤 값 생성에 필요
-#include <ctime>    // 시간 기반 시드 설정에 필요
 
 using namespace ns3;
 
 /*
  * "ConfiguredGrant" 구성 요소를 활성화하여 파일의 로그를 활성화합니다.
- * 아래와 같은 방식으로:
- * $ export NS_LOG="ConfiguredGrant=level_info|prefix_func|prefix_time"
+ * 다음과 같은 방식으로: export NS_LOG="ConfiguredGrant=level_info|prefix_func|prefix_time:NrMacSchedulerOfdmaPF=level_info|prefix_func|prefix_time"
  */
 NS_LOG_COMPONENT_DEFINE ("ConfiguredGrant");
 
-//export NS_LOG="ConfiguredGrant=level_info|prefix_func|prefix_time:NrMacSchedulerOfdmaPF=level_info|prefix_func|prefix_time"
-
-static bool g_rxPdcpCallbackCalled = false;
-static bool g_rxRxRlcPDUCallbackCalled = false;
+static bool g_rxPdcpCallbackCalled = false;     // PDCP 수신 성공 False로 설정
+static bool g_rxRxRlcPDUCallbackCalled = false; // RLC 수신 성공 False로 설정
 
 /*
  * 전역 변수
@@ -68,11 +65,8 @@ Time g_txPeriod = Seconds(0.1);
 Time delay;
 std::fstream m_ScenarioFile;
 
-std::vector<uint64_t> packetCreationTimes;  // 각 패킷 생성 시간을 저장할 벡터
-
 /*
- * MyModel 클래스
- * 이 클래스에는 UE에서 gNB로 패킷을 전송하는 이벤트를 생성하는 기능이 포함되어 있습니다.
+ * MyModel 클래스는 UE에서 gNB로 패킷을 전송하는 이벤트를 생성하는 기능이 포함되어 있습니다.
 */
 
 class MyModel : public Application{
@@ -92,18 +86,17 @@ public:
   void ScheduleTxUl_Configuration();
 
 private:
-  Ptr<NetDevice>  m_device;
-  Address         m_addr;
-  uint32_t        m_packetSize;
-  uint32_t        m_nPackets;
-  DataRate        m_dataRate;
-  EventId         m_sendEvent;
-  bool            m_running;
-  uint32_t        m_packetsSent;
-  uint8_t         m_periodicity;
-  uint32_t        m_deadline;
+  Ptr<NetDevice>  m_device;     // UE, gNB 네트워크 장치
+  Address         m_addr;       // 네트워크 주소(IP 주소, MAC 주소 등)
+  uint32_t        m_packetSize; // 패킷의 크기(Byte 단위)
+  uint32_t        m_nPackets;   // 패킷 전송 수
+  DataRate        m_dataRate;   // 데이터 전송 속도
+  EventId         m_sendEvent;  // 패킷 전송 시 타이머 이벤트
+  bool            m_running;    // 패킷 전송 여부
+  uint32_t        m_packetsSent;// 전송한 패킷 수
+  uint8_t         m_periodicity;// 전송 주기
+  uint32_t        m_deadline;   // gNB로 전달되어야 하는 최대 지연 시간
 };
-
 
 MyModel::MyModel ()
   : m_device(),
@@ -119,12 +112,13 @@ MyModel::MyModel ()
 {
 }
 
-
 MyModel::~MyModel(){
+
 }
 
 
-void MyModel::Setup (Ptr<NetDevice> device, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate, uint8_t period, uint32_t deadline){
+void
+MyModel::Setup (Ptr<NetDevice> device, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate, uint8_t period, uint32_t deadline){
   m_device = device;
   m_packetSize = packetSize;
   m_nPackets = nPackets;
@@ -138,36 +132,43 @@ void MyModel::Setup (Ptr<NetDevice> device, Address address, uint32_t packetSize
 /*
  * 하향링크(DL) 트래픽에 대해 실행되는 첫 번째 이벤트입니다. 
  */
-void StartApplicationDl (Ptr<MyModel> model){
+void
+StartApplicationDl (Ptr<MyModel> model){
   model -> SendPacketDl ();
 }
-/*
- * Function은 단일 패킷을 생성하고 디바이스의 함수 전송을 직접 호출하여
- * 목적지 주소로 패킷을 전송합니다.
- * (DL TRAFFIC), 하향링크 트래픽
- */
-void MyModel::SendPacketDl (){
-  // 패킷 생성
-  Ptr<Packet> pkt = Create<Packet> (m_packetSize,m_periodicity,m_deadline);
 
+/*
+ * Function은 단일 패킷을 생성하고 디바이스의 함수 전송을 직접 호출하여 목적지 주소로 패킷을 전송합니다.
+ * 하향링크(DL) 트래픽
+ */
+void
+MyModel::SendPacketDl (){
+  // 패킷 생성
+  Ptr<Packet> pkt = Create<Packet> (m_packetSize, m_periodicity, m_deadline);
+
+  // 인터넷 헤더 추가
   Ipv4Header ipv4Header;
   ipv4Header.SetProtocol(Ipv4L3Protocol::PROT_NUMBER);
   pkt->AddHeader(ipv4Header);
 
+  // 패킷 태그 추가
   EpsBearerTag tag (1,1);
   pkt->AddPacketTag (tag);
 
   m_device->Send (pkt, m_addr, Ipv4L3Protocol::PROT_NUMBER);
-  NS_LOG_INFO ("Sending DL");
+  NS_LOG_INFO ("하향링크(DL) 전송 중");
 
+  // 전체 패킷 수 보다 보낸 패킷수가 작을 경우만 하향링크 스케줄링
   if (++m_packetsSent < m_nPackets){
     ScheduleTxDl();
   }
 }
+
 /*
  * SendPacket은 다음 시간에 즉시 패킷을 생성합니다.
  */
-void MyModel::ScheduleTxDl (){
+void
+MyModel::ScheduleTxDl (){
   if (m_running){
     Time tNext = MilliSeconds(2);
     m_sendEvent = Simulator::Schedule (tNext, &MyModel::SendPacketDl, this);
@@ -177,37 +178,39 @@ void MyModel::ScheduleTxDl (){
 /*
  * 상향링크(UL) 트래픽에 대해 실행되는 첫 번째 이벤트입니다.
  */
-void StartApplicationUl (Ptr<MyModel> model){
+void
+StartApplicationUl (Ptr<MyModel> model){
   model -> SendPacketUl ();
 }
+
 /*
  * Function은 단일 패킷을 생성하고 디바이스의 함수 전송을 직접 호출하여
  * 목적지 주소로 패킷을 전송합니다.
  * (UL TRAFFIC), 상향링크 트래픽
  */
-void MyModel::SendPacketUl ()
-{
-  Ptr<Packet> pkt = Create<Packet> (m_packetSize,m_periodicity,m_deadline);
+void
+MyModel::SendPacketUl (){
+  // 패킷 생성
+  Ptr<Packet> pkt = Create<Packet> (m_packetSize, m_periodicity, m_deadline);
 
-  // 패킷에 생성 시간 태그 추가
-  uint64_t creationTime = Simulator::Now().GetMicroSeconds();
+  uint64_t creationTime = Simulator::Now().GetMilliSeconds(); // 패킷 생성 시간(ms)
   PacketCreationTimeTag creationTimeTag(creationTime);
-  pkt->AddPacketTag(creationTimeTag);
-  std::cout << "\n 패킷 생성 시간:" << creationTime << "ms" << std::endl;
+  pkt->AddPacketTag(creationTimeTag);                         // 패킷에 태그를 통해서 생성 시간 삽입
+  std::cout << "\n패킷 생성 시간:" << creationTime << "ms\n" << std::endl;
 
-  // 무작위로 긴급한 패킷인지 여부를 결정
-  uint32_t Urgent = (std::rand() % 8 + 1);  // 긴급도를 1 ~ 8로 결정
-  PacketUrgencyTag urgencyTag(Urgent);
-  pkt->AddPacketTag(urgencyTag);
+  uint32_t Priorty = (std::rand() % 8 + 1);                   // 우선순위를 무작위로 1 ~ 8 결정
+  PacketPriorityTag PriortyTag(Priorty);
+  pkt->AddPacketTag(PriortyTag);                              // 패킷에 태그를 통해 우선순위 삽입
 
   Ipv4Header ipv4Header;
   ipv4Header.SetProtocol(Ipv4L3Protocol::PROT_NUMBER);
   pkt->AddHeader(ipv4Header);
 
   m_device->Send (pkt, m_addr, Ipv4L3Protocol::PROT_NUMBER);
-  NS_LOG_INFO ("Sending UL");
+  NS_LOG_INFO ("상향링크 전송 중");
 
-  if (m_packetsSent==0){
+  if (m_packetsSent == 0){
+    // 최초 전송 시 구성(Configured) 작업 실행
     ScheduleTxUl_Configuration();
     m_packetsSent = 1;
   }
@@ -215,10 +218,10 @@ void MyModel::SendPacketUl ()
     ScheduleTxUl (m_periodicity);
   }
 }
+
 /*
  * SendPacket은 다음 시간에 즉시 패킷을 생성합니다.
  */
-
 void MyModel::ScheduleTxUl (uint8_t period){
   if (m_running){
     Time tNext = MilliSeconds(period);
@@ -227,17 +230,17 @@ void MyModel::ScheduleTxUl (uint8_t period){
 }
 
 void MyModel::ScheduleTxUl_Configuration (void){
-  uint8_t configurationTime = 60;
+  uint8_t configurationTime = 60; // 60ms
   Time tNext = MilliSeconds(configurationTime);
   m_sendEvent = Simulator::Schedule (tNext, &MyModel::SendPacketUl, this);
 }
 
 /*
- * TraceSink, RxRlcPDU는 트레이스 싱크와 트레이스 소스(RxPDU)를 연결합니다.***********************************************************************************************************************
+ * TraceSink, RxRlcPDU는 트레이스 싱크와 트레이스 소스(RxPDU)를 연결합니다.
  * UE를 gNB와 연결하거나 그 반대의 경우도 마찬가지입니다.
  */
 void RxRlcPDU (std::string path, uint16_t rnti, uint8_t lcid, uint32_t bytes, uint64_t rlcDelay){
-  g_rxRxRlcPDUCallbackCalled = true;
+  g_rxRxRlcPDUCallbackCalled = true;  // RLC 수신 성공 시 True 설정
   delay = Time::FromInteger(rlcDelay,Time::NS);
 
   //std::cout<<"\n rlcDelay in NS (Time):"<< delay<<std::endl;
@@ -250,7 +253,7 @@ void RxRlcPDU (std::string path, uint16_t rnti, uint8_t lcid, uint32_t bytes, ui
 
 void RxPdcpPDU (std::string path, uint16_t rnti, uint8_t lcid, uint32_t bytes, uint64_t pdcpDelay){
   //std::cout << "\n Packet PDCP delay:" << pdcpDelay << "\n";
-  g_rxPdcpCallbackCalled = true;
+  g_rxPdcpCallbackCalled = true;  // PDCP 수신 성공 시 True 설정
 }
 
 void ConnectUlPdcpRlcTraces (){
@@ -266,18 +269,18 @@ int main (int argc, char *argv[]){
   uint32_t packetSize = 10;                 // 패킷 크기 Byte
   double centralFrequencyBand1 = 3550e6;    // 주파수 3550 MHz
   double bandwidthBand1 = 20e6;             // 대역폭 20 MHz
-  uint8_t period = uint8_t(10);              // 전송주기 ms
+  uint8_t period = uint8_t(10);             // 전송주기 ms
   
   uint16_t gNbNum = 1;                      // 기지국 수
-  uint16_t ueNumPergNb = 37;                // 단말 수
+  uint16_t ueNumPergNb = 3;                 // 단말 수
 
-  bool enableUl = true;                     // 상향 트래픽 추적
+  bool enableUl = true;                     // 상향 트래픽
   uint32_t nPackets = 1000000;              // 패킷 총 개수
   Time sendPacketTime = Seconds(0);         // 패킷 전송 시작 전에 대기하는 시간, 패킷 전송 지연 시간
   uint8_t sch = 1;                          // 스케줄러 타입 (0: TDMA /1: OFDMA /2: Sym-OFDMA /3: RB-OFDMA)
                                             // Sym-OFDMA : 각 UE에 필요한 최소한의 OFDM 심볼을 할당
                                             // RB-OFDMA : 주어진 주파수 자원을 최대한 많은 UE가 공유
-  uint8_t SchedulerChoice = 2;              // 스케줄러 선택 (0: RR / 1: PF / 2: AG(AgeGreedy))
+  uint8_t SchedulerChoice = 0;              // 스케줄러 선택 (0: RR / 1: PF / 2: AG(AgeGreedy))
 
   u_int32_t seed = 2024;
   std::srand(seed);                         // 시드를 현재 시간으로 설정 42(*), 537(V), 1858(V), 3022(V), 3108(V), 4472(V), 4485(V), 5854(V), 8623(V), 9391(V)
@@ -308,7 +311,7 @@ int main (int argc, char *argv[]){
   std::vector<uint32_t> v_packet(ueNumPergNb);      // 각 패킷의 크기를 바이트 단위로 설정
 
   //std::cout << "\n Init values: " << '\n';
-  v_init = std::vector<uint32_t> (ueNumPergNb,{100000});           // μs
+  v_init = std::vector<uint32_t> (ueNumPergNb,{100000});         // μs
   // for (int val : v_init)
   //         std::cout << val << std::endl;
 
@@ -343,7 +346,7 @@ int main (int argc, char *argv[]){
   m_ScenarioFile << std::endl;
 
   int64_t randomStream = 1;
-/************************************************** << 네트워크 토폴리지 구역 >> **************************************************
+/************************************************** << 네트워크 토폴리지 구역 >> ***********************************************
  * gNB와 UE를 설정 할 수 있다. 자세한 사항은 GridScenarioHelper 문서를 참조하여 노드가 어떻게 분배되는지 확인하길 바랍니다.
  * 내가 설정한 네트워크 토폴리지는 중앙에 gNB 1개가 생성되고, 12개의 UE가 무작위 위치에서 생성되고 1 ~ 14m/s로 움직인다.
  *******************************************************************************************************************************/
@@ -480,7 +483,8 @@ int main (int argc, char *argv[]){
   // 하향링크(DL)과 상향링크(UL) AMC 모두 동일한 모델이 적용됩니다.
   nrHelper->SetGnbDlAmcAttribute ("AmcModel", EnumValue (NrAmc::ErrorModel)); // NrAmc::ShannonModel 또는 NrAmc::ErrorModel
   nrHelper->SetGnbUlAmcAttribute ("AmcModel", EnumValue (NrAmc::ErrorModel)); // NrAmc::ShannonModel 또는 NrAmc::ErrorModel
-
+  
+  // 채널 환경에 따른 패킷 드롭(전송 실패) (Signal Loss / Fading)
   bool fadingEnabled = true; 
   auto bandMask = NrHelper::INIT_PROPAGATION | NrHelper::INIT_CHANNEL;
   if (fadingEnabled){
@@ -559,15 +563,16 @@ int main (int argc, char *argv[]){
   Ptr<NrGnbMac> gnbMac = DynamicCast<NrGnbMac> (enbNetDev.Get (0)->GetObject<NrGnbNetDevice> ()->GetMac (0));
 
   Simulator::Schedule (Seconds (10.0) - NanoSeconds (2), &NrGnbMac::PrintAverageThroughput, gnbMac);
+  gnbMac->StartPeriodicAgeUpdate();  // 주기적 호출 시작 추가
   Simulator::Run ();
 
   std::cout<<"\n FIN. "<<std::endl;
 
   if (g_rxPdcpCallbackCalled && g_rxRxRlcPDUCallbackCalled){
-    return EXIT_SUCCESS;
+    return EXIT_SUCCESS;  // RLC와 PDCP 계층에서 모두 성공적으로 수신 → 성공 상태 반환
   }
   else{
-    return EXIT_FAILURE;
+    return EXIT_FAILURE;  // RLC나 PDCP 계층 중 하나라도 수신 실패 시 → 실패 상태 반환
   }
 
   Simulator::Destroy ();
