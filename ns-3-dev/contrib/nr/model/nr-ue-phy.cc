@@ -1084,8 +1084,7 @@ NrUePhy::UlData(const std::shared_ptr<DciInfoElementTdma> &dci)
     {
       // put an error, as something is wrong. The UE should not be scheduled
       // if there is no data for him...
-      NS_LOG_WARN ("The UE " << dci->m_rnti << " has been scheduled without data");
-      return varTtiPeriod;
+      NS_FATAL_ERROR ("The UE " << dci->m_rnti << " has been scheduled without data");
     }
   m_reportUlTbSize (m_netDevice->GetObject <NrUeNetDevice> ()->GetImsi (), dci->m_tbSize.at (0));
 

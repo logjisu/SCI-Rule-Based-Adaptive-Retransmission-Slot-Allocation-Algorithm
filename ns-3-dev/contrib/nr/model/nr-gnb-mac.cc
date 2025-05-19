@@ -126,6 +126,12 @@ void NrGnbMac::PeriodicAgeUpdate() {
   // 1ms 이후 다시 호출 (반복 스케줄링)
   Simulator::Schedule(MilliSeconds(1), &NrGnbMac::PeriodicAgeUpdate, this);
 }
+void NrGnbMac::ActivateUe(uint16_t rnti){
+  m_activeUes.insert(rnti);
+}
+void NrGnbMac::DeactivateUe(uint16_t rnti){
+  m_activeUes.erase(rnti);
+}
 
 void
 NrGnbMacMemberEnbCmacSapProvider::ConfigureMac (uint16_t ulBandwidth, uint16_t dlBandwidth){
@@ -197,7 +203,6 @@ public:
 
   virtual std::shared_ptr<DciInfoElementTdma> GetDlCtrlDci () const override;
   virtual std::shared_ptr<DciInfoElementTdma> GetUlCtrlDci () const override;
-
 private:
   NrGnbMac* m_mac;
 };
@@ -266,7 +271,6 @@ std::shared_ptr<DciInfoElementTdma>
 NrMacEnbMemberPhySapUser::GetUlCtrlDci() const{
   return m_mac->GetUlCtrlDci ();
 }
-
 
 // MAC Sched
 
@@ -644,6 +648,26 @@ NrGnbMac::DoSlotUlIndication (const SfnSf &sfnSf, LteNrTddSlotType type){
   m_ulCqiReceived.clear ();
 
   if (m_cgScheduling){
+    // Debug: 현재 m_activeUes 내용 출력
+    // {
+    //   std::ostringstream oss;
+    //   oss << "[DEBUG] m_activeUes contains RNTIs: ";
+    //   for (auto r : m_activeUes) {
+    //     oss << r << " ";
+    //   }
+    //   NS_LOG_INFO(oss.str());
+    // }
+    // 매 TTI 마다 active 된 SR만 m_srRntiList 에 꺼내서 쓴다
+    // m_srRntiList.clear();
+    // for (uint16_t rnti : m_activeUes){
+    //   auto it = m_rlcAttached.find (rnti);
+    //   if (it != m_rlcAttached.end ()){
+    //     m_srRntiList.push_back (rnti);
+    //   }
+    //   else {
+    //     NS_LOG_INFO ("Skipping UE " << rnti << " (active but not attached), will retry next TTI");
+    //   }
+    // }
     static bool cgr_configuration = false;
     static SfnSf m_cgr_configuration = SfnSf (0, 0, 0, sfnSf.GetNumerology ());
     static uint8_t posCG = 0;
@@ -719,19 +743,12 @@ NrGnbMac::DoSlotUlIndication (const SfnSf &sfnSf, LteNrTddSlotType type){
       for (const auto & v : m_srRntiList){
         auto& ageQueue = m_AgeQueues[v];
 
-        if (!ageQueue.empty())
-        // auto it = m_패킷생성시간.find(v);
-        // if (it != m_패킷생성시간.end())
-        {
+        if (!ageQueue.empty()){
           auto [받은시간, age] = ageQueue.front();
-
-          // Age 정보를 스케줄러에 전달
           params.m_ageList.push_back(age);
-          // NS_LOG_INFO("UE " << v << " \tAge: " << age << "\t gNB가 주기적으로 스케줄러에게 전달하는 시점");
         }
         else{
           params.m_ageList.push_back(0); // Age 정보가 없으면 0으로 설정
-          // NS_LOG_INFO("UE Age 정보 없음, \t gNB가 주기적으로 스케줄러에게 전달하는 시점");
         }
       }
       m_srRntiList.clear();

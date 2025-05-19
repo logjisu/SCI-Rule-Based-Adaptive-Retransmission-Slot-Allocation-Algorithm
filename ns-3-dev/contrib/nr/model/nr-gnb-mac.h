@@ -32,6 +32,7 @@
  #include <ns3/lte-mac-sap.h>
  #include <ns3/lte-enb-cmac-sap.h>
  #include <ns3/traced-callback.h>
+ #include <set>
  
  namespace ns3 {
  
@@ -88,7 +89,9 @@
    void IncrementAgeOnNoPacket(uint16_t rnti, uint32_t deadlineMs);
    void ResetAgeOnPacketProcessed(uint16_t rnti);
    void PeriodicAgeUpdate();
-
+   void ActivateUe(uint16_t rnti);
+   void DeactivateUe(uint16_t rnti);
+   std::set<uint16_t> m_activeUes;
    /**
     * \brief Sets the number of RBs per RBG. Currently it can be 
     * configured by the user, while in the future it will be configured 
@@ -292,7 +295,7 @@
     * \return a UL CTRL allocation
     */
    std::shared_ptr<DciInfoElementTdma> GetUlCtrlDci () const;
- 
+
  private:
    void ReceiveRachPreamble (uint32_t raId);
    void DoReceiveRachPreamble (uint32_t raId);
@@ -451,6 +454,7 @@
    SfnSf m_cgrNextTxSlot;
    uint8_t countCG_slots = 0 ;
    uint64_t CalculateAgeForRnti(uint16_t rnti);  // Age 계산 함수 선언
+
  };
  
  }
