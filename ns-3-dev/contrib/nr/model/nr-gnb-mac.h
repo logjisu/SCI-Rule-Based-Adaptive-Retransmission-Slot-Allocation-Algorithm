@@ -85,7 +85,7 @@
    virtual ~NrGnbMac (void) override;
 
    void StartPeriodicAgeUpdate();
-   void IncrementAgeOnNoPacket(uint16_t rnti, int deadlineMs);
+   void IncrementAgeOnNoPacket(uint16_t rnti, uint32_t deadlineMs);
    void ResetAgeOnPacketProcessed(uint16_t rnti);
    void PeriodicAgeUpdate();
 

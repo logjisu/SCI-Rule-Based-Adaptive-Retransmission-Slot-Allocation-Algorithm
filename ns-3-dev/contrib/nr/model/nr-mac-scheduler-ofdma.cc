@@ -25,6 +25,8 @@ do{                                                                  \
 while (false);
 
 #include "nr-mac-scheduler-ofdma.h"
+#include <ns3/lte-common.h>
+#include "nr-gnb-mac.h"
 #include <ns3/log.h>
 #include <algorithm>
 #include "math.h"
@@ -644,17 +646,14 @@ NrMacSchedulerOfdma::AssignULRBG (uint32_t symAvail, const ActiveUeMap &activeUl
  // Iterate through the different beams
  if (m_schType_OFDMA == 1)
  {
-     for (const auto &el : activeUl)
-       {
+    for (const auto &el : activeUl){
          // Distribute the RBG evenly among UEs of the same beam
          uint32_t beamSym = symPerBeam.at (GetBeamId (el));
          uint32_t rbgAssignable = 1 * beamSym;
          std::vector<UePtrAndBufferReq> ueVector;
          FTResources assigned (0,0);
          const std::vector<uint8_t> ulNotchedRBGsMask = GetUlNotchedRbgMask ();
-         uint32_t resources = ulNotchedRBGsMask.size () > 0 ? std::count (ulNotchedRBGsMask.begin (),
-                                                                        ulNotchedRBGsMask.end (),
-                                                                        1) : GetBandwidthInRbg ();
+         uint32_t resources = ulNotchedRBGsMask.size () > 0 ? std::count (ulNotchedRBGsMask.begin (), ulNotchedRBGsMask.end (), 1) : GetBandwidthInRbg ();
          NS_ASSERT (resources > 0);
 
          for (const auto &ue : GetUeVector (el))
@@ -666,12 +665,12 @@ NrMacSchedulerOfdma::AssignULRBG (uint32_t symAvail, const ActiveUeMap &activeUl
            {
              BeforeUlSched (ue, FTResources (rbgAssignable * beamSym, beamSym));
            }
-         NS_LOG_INFO("UE 정렬 전: ");
-         for (const auto& ue : ueVector) {
-             uint16_t rnti = ue.first->m_rnti;
-             uint64_t age = NrMacSchedulerNs3::GetAge(rnti);
-             NS_LOG_INFO("UE: " << rnti << ", Age: " << age);
-         }
+        NS_LOG_INFO("UE 정렬 전: ");
+        for (const auto& ue : ueVector) {
+          uint16_t rnti = ue.first->m_rnti;
+          uint64_t age = NrMacSchedulerNs3::GetAge(rnti);
+          NS_LOG_INFO("UE: " << rnti << ", Age: " << age);
+        }
          while (resources > 0)
            {
              GetFirst GetUe;
@@ -679,7 +678,6 @@ NrMacSchedulerOfdma::AssignULRBG (uint32_t symAvail, const ActiveUeMap &activeUl
              std::sort (ueVector.begin (), ueVector.end (), GetUeCompareUlFn ()); //Comment out this line to assign the packets in order
              
              auto schedInfoIt = ueVector.begin ();
-             // NS_LOG_INFO(" KBS: " << GetUe (*schedInfoIt)->m_rnti);
              // Ensure fairness: pass over UEs which already has enough resources to transmit
              while (schedInfoIt != ueVector.end ())
                {
@@ -1398,7 +1396,15 @@ NrMacSchedulerOfdma::CreateUlCGConfig (PointInFTPlane *spoint, const std::shared
      NS_LOG_DEBUG ("While creating DCI for UE " << ueInfo->m_rnti <<
                    " assigned " << ueInfo->m_ulRBG << " UL RBG, but TBS < 7");
      return nullptr;
-   }*/
+   }
+  */
+//  if (ueInfo->m_ulRBG == 0 || tbs < 7)
+// {
+//   NS_LOG_DEBUG ("Skip UL-CG DCI for UE " << ueInfo->m_rnti
+//                 << " (no data, RBG=" << ueInfo->m_ulRBG
+//                 << ", tbs=" << tbs << ")");
+//   return nullptr;
+// }
 
  // 심볼당 할당할 RBG(Resource Block Group) 수 계산
  uint32_t RBGNum = ueInfo->m_ulRBG /ueInfo->m_ulSym ;

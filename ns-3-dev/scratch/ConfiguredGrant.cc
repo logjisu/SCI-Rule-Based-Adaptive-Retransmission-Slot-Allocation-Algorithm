@@ -32,6 +32,8 @@
 
 #include "ns3/a-packet-tags.h"
 #include "ns3/antenna-module.h"
+#include "ns3/buildings-helper.h"
+#include "ns3/building-container.h"
 #include "ns3/core-module.h"
 #include "ns3/config-store.h"
 #include <cstdlib>
@@ -41,11 +43,13 @@
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/internet-module.h"
 #include "ns3/mobility-module.h"
+#include "ns3/netanim-module.h"
 #include "ns3/network-module.h"
 #include "ns3/nr-helper.h"
 #include "ns3/nr-module.h"
 #include "ns3/nr-point-to-point-epc-helper.h"
 #include "ns3/log.h"
+#include <sstream>
 
 using namespace ns3;
 
@@ -76,6 +80,13 @@ public:
 
   void Setup (Ptr<NetDevice> device, Address address, uint32_t packetSize, uint32_t nPackets, DataRate dataRate, uint8_t period, uint32_t deadline);
 
+  void StopModel() {
+    m_running = false;
+    if (m_sendEvent.IsRunning()) {
+      Simulator::Cancel(m_sendEvent);
+    }
+  }
+
   // 하향링크(DL)
   void SendPacketDl ();
   void ScheduleTxDl ();
@@ -96,6 +107,8 @@ private:
   uint32_t        m_packetsSent;// 전송한 패킷 수
   uint8_t         m_periodicity;// 전송 주기
   uint32_t        m_deadline;   // gNB로 전달되어야 하는 최대 지연 시간
+  uint8_t         m_offsetMs;   // 각 UE마다 랜덤으로 뿌릴 offset (0 ~ periodicity-1)
+  bool            m_isConfigured;//
 };
 
 MyModel::MyModel ()
@@ -127,7 +140,14 @@ MyModel::Setup (Ptr<NetDevice> device, Address address, uint32_t packetSize, uin
   m_packetsSent = 0;
   m_periodicity = period;
   m_deadline = deadline;
+  // 여기서 UE마다 랜덤 offset 생성 (0 ~ period-1 ms)
+  m_offsetMs = std::rand() % m_periodicity;
+  m_isConfigured = false;
 }
+
+// static const uint32_t MAX_UE = 50;  
+static std::vector<Ptr<MyModel>> ueModels;
+static std::vector<uint32_t> inactive, active;
 
 /*
  * 하향링크(DL) 트래픽에 대해 실행되는 첫 번째 이벤트입니다. 
@@ -183,6 +203,50 @@ StartApplicationUl (Ptr<MyModel> model){
   model -> SendPacketUl ();
 }
 
+void
+HandleTtiEvent ()
+{
+  // 이탈은 우선 비활성화
+  // 이탈: active 풀에서 1~2개 랜덤 선택 StopApplication
+  // uint32_t leaveNum = std::rand() % 2 + 1;
+  // for (uint32_t i = 0; i < leaveNum && !active.empty(); ++i) {
+  //   uint32_t pos = std::rand() % active.size();
+  //   uint32_t idx = active[pos];
+  //   std::swap(active[pos], active.back());
+  //   active.pop_back();
+  //   inactive.push_back(idx);
+  //   // NS_LOG_INFO ("[TTI] UE " << idx << " left (active count: " << active.size() << ")");
+  //   // 애플리케이션 중단
+  //   ueModels[idx]->StopModel();
+  // }
+
+  // 합류: inactive 풀에서 1~2개 랜덤 선택해 StartApplication
+  uint32_t joinNum = std::rand() % 2 + 1;
+  for (uint32_t i = 0; i < joinNum && !inactive.empty(); ++i) {
+    uint32_t idx = inactive.back();
+    inactive.pop_back();
+    active.push_back(idx);
+    // NS_LOG_INFO ("[TTI] UE " << idx << " joined (active count: " << active.size() << ")");
+    // 0초 뒤(즉시) 애플리케이션 시작
+    Simulator::Schedule(Seconds(0.0), &StartApplicationUl, ueModels[idx]);
+  }
+
+  // 현재 활성화된 UE 출력
+  {
+    std::ostringstream oss;
+    oss << "[TTI] 현재 활성화된 UE: ";
+    for (size_t i = 0; i < active.size (); ++i)
+      {
+        oss << active[i]+1;
+        if (i + 1 < active.size ()) oss << ", ";
+      }
+    NS_LOG_INFO (oss.str ());
+  }
+
+  // 다음 TTI 스케줄 (50 ms 마다 반복)
+  Simulator::Schedule(MilliSeconds(50), &HandleTtiEvent);
+}
+
 /*
  * Function은 단일 패킷을 생성하고 디바이스의 함수 전송을 직접 호출하여
  * 목적지 주소로 패킷을 전송합니다.
@@ -209,14 +273,28 @@ MyModel::SendPacketUl (){
   m_device->Send (pkt, m_addr, Ipv4L3Protocol::PROT_NUMBER);
   NS_LOG_INFO ("상향링크 전송 중");
 
-  if (m_packetsSent == 0){
-    // 최초 전송 시 구성(Configured) 작업 실행
-    ScheduleTxUl_Configuration();
+  // if (m_packetsSent == 0){
+  //   // 최초 전송 시 구성(Configured) 작업 실행
+  //   ScheduleTxUl_Configuration();
+  //   m_packetsSent = 1;
+  // }
+  if (!m_isConfigured) {
+    // 최초 전송: Configuration 후에 다시 전송
+    m_isConfigured = true;
     m_packetsSent = 1;
+    ScheduleTxUl_Configuration();
+    return;
   }
-  else if (++m_packetsSent < m_nPackets){
-    ScheduleTxUl (m_periodicity);
+  else{
+    ++m_packetsSent;
+    if (m_nPackets == 0 || m_packetsSent < m_nPackets) // m_nPackets == 0 이면 (풀-버퍼), 아니면 설정된 개수
+    {
+      ScheduleTxUl (m_periodicity);
+    }
   }
+  // else if (++m_packetsSent < m_nPackets){
+  //   ScheduleTxUl (m_periodicity);
+  // }
 }
 
 /*
@@ -231,7 +309,7 @@ void MyModel::ScheduleTxUl (uint8_t period){
 
 void MyModel::ScheduleTxUl_Configuration (void){
   uint8_t configurationTime = 60; // 60ms
-  Time tNext = MilliSeconds(configurationTime);
+  Time tNext = MilliSeconds(configurationTime+ m_offsetMs);
   m_sendEvent = Simulator::Schedule (tNext, &MyModel::SendPacketUl, this);
 }
 
@@ -265,26 +343,31 @@ void ConnectUlPdcpRlcTraces (){
 
 /************************************************************ << main >> ************************************************************/
 int main (int argc, char *argv[]){
-  uint16_t numerologyBwp1 = 2;              // 대역폭 부분에서 사용할 서브캐리어 간격을 설정
+  uint16_t numerologyBwp1 = 1;              // 대역폭 부분에서 사용할 서브캐리어 간격을 설정
   uint32_t packetSize = 10;                 // 패킷 크기 Byte
   double centralFrequencyBand1 = 3550e6;    // 주파수 3550 MHz
   double bandwidthBand1 = 20e6;             // 대역폭 20 MHz
+  uint32_t init = 100000;
   uint8_t period = uint8_t(10);             // 전송주기 ms
-  
+  uint32_t deadline = 10000000;
+
   uint16_t gNbNum = 1;                      // 기지국 수
-  uint16_t ueNumPergNb = 3;                 // 단말 수
+  uint16_t ueNumPergNb = 20;                // 단말 수
+  uint16_t buildingNum = 5;                 // 빌딩 수
 
   bool enableUl = true;                     // 상향 트래픽
-  uint32_t nPackets = 1000000;              // 패킷 총 개수
+  uint32_t nPackets = 0;                    // 패킷 총 개수(0 이면 풀버퍼, 아니면 설정된 개수)
   Time sendPacketTime = Seconds(0);         // 패킷 전송 시작 전에 대기하는 시간, 패킷 전송 지연 시간
   uint8_t sch = 1;                          // 스케줄러 타입 (0: TDMA /1: OFDMA /2: Sym-OFDMA /3: RB-OFDMA)
                                             // Sym-OFDMA : 각 UE에 필요한 최소한의 OFDM 심볼을 할당
                                             // RB-OFDMA : 주어진 주파수 자원을 최대한 많은 UE가 공유
   uint8_t SchedulerChoice = 0;              // 스케줄러 선택 (0: RR / 1: PF / 2: AG(AgeGreedy))
 
-  u_int32_t seed = 2024;
+  u_int32_t seed = 42;
+  // u_int32_t seed = static_cast<u_int32_t>(time(nullptr));
   std::srand(seed);                         // 시드를 현재 시간으로 설정 42(*), 537(V), 1858(V), 3022(V), 3108(V), 4472(V), 4485(V), 5854(V), 8623(V), 9391(V)
   delay = MicroSeconds(10);                 // 트래픽에 적용할 지연 시간(딜레이)을 설정
+  Config::SetDefault ("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue (80));
 
   CommandLine cmd;
   cmd.AddValue ("numerologyBwp1", "The numerology to be used in bandwidth part 1", numerologyBwp1);
@@ -297,11 +380,11 @@ int main (int argc, char *argv[]){
 
   /*********************************************************< Age가 넘어가는 경로의 gNB, Scheduler NS3 LOG INFO >******************************************************/
   
-  //LogComponentEnable("ConfiguredGrant", LOG_INFO);
+  LogComponentEnable("ConfiguredGrant", LOG_INFO);
   LogComponentEnable("NrGnbMac", LOG_INFO);
   //LogComponentEnable("NrMacSchedulerNs3", LOG_INFO);
   //LogComponentEnable("NrMacSchedulerTdma", LOG_INFO);
-  //LogComponentEnable("NrMacSchedulerOfdma", LOG_INFO);
+  LogComponentEnable("NrMacSchedulerOfdma", LOG_INFO);
 
   /*******************************************************************************************************************************************************************/
 
@@ -310,25 +393,10 @@ int main (int argc, char *argv[]){
   std::vector<uint32_t> v_deadline(ueNumPergNb);    // 각 패킷이 전송되어야 하는 마감 시간을 설정하여 패킷이 전송되는 데 필요한 최대 시간
   std::vector<uint32_t> v_packet(ueNumPergNb);      // 각 패킷의 크기를 바이트 단위로 설정
 
-  //std::cout << "\n Init values: " << '\n';
-  v_init = std::vector<uint32_t> (ueNumPergNb,{100000});         // μs
-  // for (int val : v_init)
-  //         std::cout << val << std::endl;
-
-  //std::cout << "Deadline values: " << '\n';
-  v_deadline = std::vector<uint32_t> (ueNumPergNb,{10000000});  // μs
-  // for (int val : v_deadline)
-  //          std::cout << val << std::endl;
-
-  std::cout << "Packet values: " << '\n';
-  v_packet = std::vector<uint32_t> (ueNumPergNb,{packetSize});
-  // for (int val : v_packet)
-          // std::cout << val << std::endl;
-
-  //std::cout << "Period values: " << '\n';
-  v_period = std::vector<uint32_t> (ueNumPergNb,{period});
-  // for (int val : v_period)
-  //         std::cout << val << "\t";
+  v_init = std::vector<uint32_t> (ueNumPergNb,{init});          // μs
+  v_deadline = std::vector<uint32_t> (ueNumPergNb,{deadline});  // μs
+  v_packet = std::vector<uint32_t> (ueNumPergNb,{packetSize});  //
+  v_period = std::vector<uint32_t> (ueNumPergNb,{period});      // ms
 
 
   m_ScenarioFile.open("Scenario.txt", std::ofstream::out | std::ofstream::trunc);
@@ -352,9 +420,11 @@ int main (int argc, char *argv[]){
  *******************************************************************************************************************************/
   NodeContainer gNBNodes;
   NodeContainer ueNodes;
+  BuildingContainer buildings;
 
   gNBNodes.Create(gNbNum);
   ueNodes.Create(ueNumPergNb * gNbNum);
+  buildings.Create(buildingNum);
 
   MobilityHelper mobility;
 
@@ -367,13 +437,26 @@ int main (int argc, char *argv[]){
 
   // UE 위치 및 이동성 설정
   mobility.SetPositionAllocator("ns3::RandomBoxPositionAllocator",
-                                "X", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=10.0]"),
-                                "Y", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=10.0]"));
+                                "X", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=50.0]"),
+                                "Y", StringValue ("ns3::UniformRandomVariable[Min=0.0|Max=50.0]"));
   mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel",
-                            "Bounds", RectangleValue(Rectangle(0, 100, 0, 100)),
+                            "Bounds", RectangleValue(Rectangle(0, 200, 0, 200)),
                             "Speed", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=14.0]"));
   mobility.Install(ueNodes);
+  
+  // Ptr<Building> b1 = buildings.Get(0);
+  // b1->SetBoundaries(Box(0.0, 10.0, 0.0, 10.0, 0.0, 20.0)); // 첫 번째 건물 크기
+  // Ptr<Building> b2 = buildings.Get(1);
+  // b2->SetBoundaries(Box(20.0, 30.0, 20.0, 30.0, 0.0, 10.0)); // 두 번째 건물 크기
+  // Ptr<Building> b3 = buildings.Get(2);
+  // b3->SetBoundaries(Box(40.0, 50.0, 40.0, 50.0, 0.0, 15.0)); // 세 번째 건물 크기
+  // Ptr<Building> b4 = buildings.Get(3);
+  // b4->SetBoundaries(Box(60.0, 70.0, 60.0, 70.0, 0.0, 20.0)); // 네 번째 건물 크기
+  // Ptr<Building> b5 = buildings.Get(4);
+  // b5->SetBoundaries(Box(80.0, 90.0, 80.0, 90.0, 0.0, 10.0)); // 다섯 번째 건물 크기
 
+  BuildingsHelper::Install(gNBNodes);
+  BuildingsHelper::Install(ueNodes);
 
   Ptr<NrPointToPointEpcHelper> epcHelper = CreateObject<NrPointToPointEpcHelper> ();
   Ptr<IdealBeamformingHelper> idealBeamformingHelper = CreateObject<IdealBeamformingHelper>();
@@ -455,10 +538,30 @@ int main (int argc, char *argv[]){
   BandwidthPartInfoPtrVector allBwps;
   CcBwpCreator ccBwpCreator;
   const uint8_t numCcPerBand = 1;
-
-  CcBwpCreator::SimpleOperationBandConf bandConf1 (centralFrequencyBand1, bandwidthBand1,
-                                                        numCcPerBand, BandwidthPartInfo::InH_OfficeOpen_nLoS);
-
+  
+  // 로스(LOS) : 중심 주파수, 대역폭, 컴포넌트 수
+  CcBwpCreator::SimpleOperationBandConf bandConf1 (centralFrequencyBand1, bandwidthBand1, numCcPerBand, BandwidthPartInfo::UMi_Buildings);
+  /* 기본적으로 제공되는 로스 환경 목록들 ( UMi_Buildings  InH_OfficeOpen_nLoS  )
+   * RMa,                   //!< 농촌 지역의 매크로셀 환경                                          (Rural Macro, RMa)
+   * RMa_LoS,               //!< 농촌 매크로 환경에서 가시선(LOS) 조건                              (RMa where all the nodes will be in Line-of-Sight)
+   * RMa_nLoS,              //!< 농촌 매크로 환경에서 비가시선(N-LOS) 조건                          (RMA where all the nodes will not be in Line-of-Sight)
+   * UMa,                   //!< 도시 지역의 매크로셀 환경                                          (Urban Macro, UMa)
+   * UMa_LoS,               //!< 도시 매크로 환경에서 가시선(LOS) 조건                              (UMa where all the nodes will be in Line-of-Sight)
+   * UMa_nLoS,              //!< 도시 매크로 환경에서 비가시선(N-LOS) 조건                          (UMa where all the nodes will not be in Line-of-Sight)
+   * UMi_StreetCanyon,      //!< 도시 소형 셀(마이크로셀)환경, 도로 협곡 구조                       (UMi_StreetCanyon)
+   * UMi_StreetCanyon_LoS,  //!< 도시 소형 셀(마이크로셀)환경, 도로 협곡 구조 가시선(LOS) 조건      (UMi_StreetCanyon where all the nodes will be in Line-of-Sight)
+   * UMi_StreetCanyon_nLoS, //!< 도시 소형 셀(마이크로셀)환경, 도로 협곡 구조 비가시선(N-LOS) 조건  (UMi_StreetCanyon where all the nodes will not be in Line-of-Sight)
+   * InH_OfficeOpen,        //!< 실내 개방형 사무실 환경                                            (InH_OfficeOpen)
+   * InH_OfficeOpen_LoS,    //!< 실내 개방형 사무실 환경 가기선(LOS) 조건                           (indoor office where all the nodes will be in Line-of-Sight)
+   * InH_OfficeOpen_nLoS,   //!< 실내 개방형 사무실 환경 비가시선(N-LOS) 조건                       (indoor office where all the nodes will not be in Line-of-Sight)
+   * InH_OfficeMixed,       //!< 실내 혼합형 사무실 환경                                            (InH_OfficeMixed)
+   * InH_OfficeMixed_LoS,   //!< 실내 혼합형 사무실 환경 가기선(LOS) 조건                           (indoor office where all the nodes will be in Line-of-Sight)
+   * InH_OfficeMixed_nLoS,  //!< 실내 혼합형 사무실 환경 비가기선(N-LOS) 조건                       (indoor office where all the nodes will not be in Line-of-Sight)
+   * UMa_Buildings,         //!< 건물이 많은 도시 지역 환경                                         (UMa with buildings)
+   * UMi_Buildings,         //!< 건물이 많은 소형 도시 지역 환경                                    (UMi_StreetCanyon with buildings)
+   * V2V_Highway,           //!< 차량 간 통신                                                       (V2V_Highway)
+   * V2V_Urban              //!< 차량 간 통신 도시 환경                                             (V2V_Urban)
+   */
 
   // 생성된 구성을 사용하여 작업 대역을 만들 때입니다.
   OperationBandInfo band1 = ccBwpCreator.CreateOperationBandContiguousCc (bandConf1);
@@ -510,8 +613,6 @@ int main (int argc, char *argv[]){
   // NetDevices 설치 및 포인터 가져오기
   NetDeviceContainer enbNetDev = nrHelper->InstallGnbDevice (gNBNodes, allBwps);
   NetDeviceContainer ueNetDev = nrHelper->InstallUeDevice (ueNodes, allBwps);
-  // NetDeviceContainer enbNetDev = nrHelper->InstallGnbDevice (gridScenario.GetBaseStations (), allBwps);
-  // NetDeviceContainer ueNetDev = nrHelper->InstallUeDevice (gridScenario.GetUserTerminals (), allBwps);
 
   randomStream += nrHelper->AssignStreams (enbNetDev, randomStream);
   randomStream += nrHelper->AssignStreams (ueNetDev, randomStream);
@@ -529,7 +630,6 @@ int main (int argc, char *argv[]){
 
   // 인터넷 스택 설치
   InternetStackHelper internet;
-  // internet.Install (gridScenario.GetUserTerminals ());
   internet.Install (ueNodes);
   
   // IP 주소 전달
@@ -538,13 +638,13 @@ int main (int argc, char *argv[]){
 
   // 상향링크(UL) 트래픽
   std::vector <Ptr<MyModel>> v_modelUl;
-  v_modelUl = std::vector<Ptr<MyModel>> (ueNumPergNb,{0});
-  for (uint8_t ii=0; ii<ueNumPergNb; ++ii){
-    Ptr<MyModel> modelUl = CreateObject<MyModel> ();
-    modelUl -> Setup(ueNetDev.Get(ii), enbNetDev.Get(0)->GetAddress(), v_packet[ii], nPackets, DataRate("1Mbps"),v_period[ii], v_deadline[ii]);
-    v_modelUl[ii] = modelUl;
-    Simulator::Schedule(MicroSeconds(v_init[ii]), &StartApplicationUl, v_modelUl[ii]);
-  }
+  // v_modelUl = std::vector<Ptr<MyModel>> (ueNumPergNb,{0});
+  // for (uint8_t ii=0; ii<ueNumPergNb; ++ii){
+  //   Ptr<MyModel> modelUl = CreateObject<MyModel> ();
+  //   modelUl -> Setup(ueNetDev.Get(ii), enbNetDev.Get(0)->GetAddress(), v_packet[ii], nPackets, DataRate("1Mbps"),v_period[ii], v_deadline[ii]);
+  //   v_modelUl[ii] = modelUl;
+  //   Simulator::Schedule(MicroSeconds(v_init[ii]), &StartApplicationUl, v_modelUl[ii]);
+  // }
 
   // 하향링크(DL) 트래픽
   //Ptr<MyModel> modelDl = CreateObject<MyModel> ();
@@ -556,17 +656,45 @@ int main (int argc, char *argv[]){
   nrHelper->AttachToClosestEnb (ueNetDev, enbNetDev);
   nrHelper->EnableTraces();
 
-  Simulator::Schedule (Seconds (0.16), &ConnectUlPdcpRlcTraces);
-  Simulator::Stop (Seconds (10.0));
-
   // gNB의 MAC 객체에 대한 포인터를 얻습니다.
   Ptr<NrGnbMac> gnbMac = DynamicCast<NrGnbMac> (enbNetDev.Get (0)->GetObject<NrGnbNetDevice> ()->GetMac (0));
 
-  Simulator::Schedule (Seconds (10.0) - NanoSeconds (2), &NrGnbMac::PrintAverageThroughput, gnbMac);
+  ueModels.reserve(ueNumPergNb);
+  for (uint32_t i = 0; i < ueNumPergNb; ++i) {
+    Ptr<MyModel> m = CreateObject<MyModel>();
+    m->Setup(ueNetDev.Get (i), enbNetDev.Get (0)->GetAddress (), packetSize, nPackets, DataRate ("1Mbps"), period, deadline);
+    ueModels.push_back (m);
+    active.push_back (i);
+    Simulator::Schedule (MicroSeconds(v_init[i]), &StartApplicationUl, m);
+  }
+
+  Simulator::Schedule (MicroSeconds(init+500), &HandleTtiEvent);
   gnbMac->StartPeriodicAgeUpdate();  // 주기적 호출 시작 추가
+  // for (auto &model : ueModels) {
+  //   Simulator::Schedule (MicroSeconds (100), &StartApplicationUl, model);
+  // }
+
+  
+  // AnimationInterface anim ("CG_With_Buildings.xml");
+
+  // // 색상 설정
+  // anim.UpdateNodeDescription(gNBNodes.Get(0)->GetId(), "gNB");
+  // anim.UpdateNodeColor(gNBNodes.Get(0)->GetId(), 0, 255, 0);    // gNB (기지국) : 초록색
+
+  // for (uint32_t i = 0; i < ueNodes.GetN(); ++i) {
+  //   anim.UpdateNodeColor(ueNodes.Get(i)->GetId(), 0, 0, 255);   // UE (단말) : 파란색
+  // }
+
+  // anim.SetMobilityPollInterval (Seconds(0.01));  // 위치 정보 강제 갱신
+  // anim.EnablePacketMetadata (true);              // 패킷 메타데이터 활성화
+
+  Simulator::Schedule (Seconds (0.16), &ConnectUlPdcpRlcTraces);
+  Simulator::Stop (Seconds (10.0));
+
+  Simulator::Schedule (Seconds (10.0) - NanoSeconds (2), &NrGnbMac::PrintAverageThroughput, gnbMac);
   Simulator::Run ();
 
-  std::cout<<"\n FIN. "<<std::endl;
+  std::cout<<"\n 종료. "<<std::endl;
 
   if (g_rxPdcpCallbackCalled && g_rxRxRlcPDUCallbackCalled){
     return EXIT_SUCCESS;  // RLC와 PDCP 계층에서 모두 성공적으로 수신 → 성공 상태 반환

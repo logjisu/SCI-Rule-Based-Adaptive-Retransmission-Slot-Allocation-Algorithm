@@ -29,6 +29,7 @@
  *
  * This code is based on "cttc-3gpp-channel-simple-ran.cc" (5G-LENA) code.
  */
+#include "ns3/netanim-module.h"
 
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
@@ -370,6 +371,19 @@ main (int argc, char *argv[]){
     Ptr<NrHelper> nrHelper = CreateObject<NrHelper> ();
     nrHelper->SetBeamformingHelper (idealBeamformingHelper);
 
+    AnimationInterface anim ("network-animation.xml");
+
+    for (uint32_t i = 0; i < gNbNum; ++i) {
+      anim.SetConstantPosition(gridScenario.GetBaseStations().Get(i), 0.0, 0.0); 
+      anim.UpdateNodeDescription(gridScenario.GetBaseStations().Get(i)->GetId(), "gNB");
+      anim.UpdateNodeColor(gridScenario.GetBaseStations().Get(i)->GetId(), 255, 0, 0); // 빨간색
+  }
+  
+  for (uint32_t i = 0; i < ueNumPergNb; ++i) {
+      anim.SetConstantPosition(gridScenario.GetUserTerminals().Get(i), 5.0 + i, 5.0); 
+      anim.UpdateNodeDescription(gridScenario.GetUserTerminals().Get(i)->GetId(), "UE " + std::to_string(i));
+      anim.UpdateNodeColor(gridScenario.GetUserTerminals().Get(i)->GetId(), 0, 255, 0); // 초록색
+  }
     // Scheduler type: configured grant or grant based
     /* false -> grant based : true -> configured grant */
     bool scheduler_CG = true;
