@@ -23,6 +23,8 @@ set(source_files
     model/a-packet-tags.cc
     model/nr-mac-scheduler-ofdma-ag.cc
     model/nr-mac-scheduler-ue-info-ag.cc
+    model/nr-mac-scheduler-ofdma-pg.cc
+    model/nr-mac-scheduler-ue-info-pg.cc
     model/nr-net-device.cc
     model/nr-gnb-net-device.cc
     model/nr-ue-net-device.cc
@@ -124,6 +126,8 @@ set(header_files
     model/a-packet-tags.h
     model/nr-mac-scheduler-ue-info-ag.h
     model/nr-mac-scheduler-ofdma-ag.h
+    model/nr-mac-scheduler-ofdma-pg.h
+    model/nr-mac-scheduler-ue-info-pg.h
     model/nr-net-device.h
     model/nr-gnb-net-device.h
     model/nr-ue-net-device.h
