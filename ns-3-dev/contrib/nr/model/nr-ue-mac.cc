@@ -401,52 +401,45 @@ NrUeMac::DoTransmitPdu (LteMacSapProvider::TransmitPduParameters params)
 }
 
 void
-NrUeMac::DoReportBufferStatus (LteMacSapProvider::ReportBufferStatusParameters params)
-{
+NrUeMac::DoReportBufferStatus (LteMacSapProvider::ReportBufferStatusParameters params) {
   NS_LOG_FUNCTION (this << static_cast<uint32_t> (params.lcid));
 
   auto it = m_ulBsrReceived.find (params.lcid);
 
   NS_LOG_INFO ("Received BSR for LC Id" << static_cast<uint32_t>(params.lcid));
 
-  if (it != m_ulBsrReceived.end ())
-    {
-      // update entry
-      (*it).second = params;
-    }
-  else
-    {
-      it = m_ulBsrReceived.insert (std::make_pair (params.lcid, params)).first;
-    }
+  if (it != m_ulBsrReceived.end ()) {
+    // update entry
+    (*it).second = params;
+  }
+  else {
+    it = m_ulBsrReceived.insert (std::make_pair (params.lcid, params)).first;
+  }
 
   // The state machine for CG and dynamic grant is different, so when a packet is
   // received in the UE layer of the upper layers, depending on which scheduling
   // we are using, it will move to one state or another
-  if (m_cgScheduling)
-    {
-      if (m_srState_configuredGrant == INACTIVE_CG)
-        {
-          NS_LOG_INFO ("INACTIVE -> TO_SEND, bufSize " << GetTotalBufSize ());
-          m_srState_configuredGrant = TO_SEND_TrafficInfo;
-          if (params.rnti == 4)// Esto lo teno que cambiar, va a ser variable pero por ahroa
-              // solo para probar
-          {
-            m_traffDeadlineTime =  MicroSeconds(200); //80
-          }
-          else
-          {
-            m_traffDeadlineTime = MicroSeconds(150); //60
-          }
-          m_traffStartTime = Simulator::Now();
-          m_trafficPeriodicity = params.periodicity;
-        }
-
-      if (m_srState_configuredGrant == ACTIVE_CG)
-        {
-          NS_LOG_INFO ("CONFIGURED GRANT, bufSize " << GetTotalBufSize ());
-          m_srState_configuredGrant = SCH_CG_DATA; //If we have a new packet, we are not going to call to SR.
-        }
+  if (m_cgScheduling) {
+    if (m_srState_configuredGrant == INACTIVE_CG) {
+      NS_LOG_INFO ("INACTIVE_CG -> TO_SEND, bufSize " << GetTotalBufSize ());
+      m_srState_configuredGrant = TO_SEND_TrafficInfo;
+      if (params.rnti == 4) {
+        // Esto lo teno que cambiar, va a ser variable pero por ahroa      
+        // solo para probar
+        m_traffDeadlineTime =  MicroSeconds(200); //80
+      }
+      else {
+        m_traffDeadlineTime = MicroSeconds(150); //60
+      }
+      m_traffStartTime = Simulator::Now();
+      m_trafficPeriodicity = params.periodicity;
     }
+
+    if (m_srState_configuredGrant == ACTIVE_CG) {
+      NS_LOG_INFO ("CONFIGURED GRANT, bufSize " << GetTotalBufSize ());
+      m_srState_configuredGrant = SCH_CG_DATA; //If we have a new packet, we are not going to call to SR.
+    }
+  }
   else
     {
       if (m_srState == INACTIVE)
@@ -656,8 +649,7 @@ NrUeMac::RecvRaResponse (BuildRarListElement_s raResponse)
 }
 
 void
-NrUeMac::ProcessUlDci (const Ptr<NrUlDciMessage> &dciMsg)
-{
+NrUeMac::ProcessUlDci (const Ptr<NrUlDciMessage> &dciMsg) {
   NS_LOG_FUNCTION (this);
 
   SfnSf dataSfn = m_currentSlot;
@@ -670,39 +662,37 @@ NrUeMac::ProcessUlDci (const Ptr<NrUlDciMessage> &dciMsg)
 
   // When the UE receives the CG signal it stores this information in the MAC layer
   // It represents the TO_RECEIVE_CG state
-  if (m_cgScheduling)
-    {
-      m_dciGranted_stored[cg_slot_counter_DCI] = std::make_shared <DciInfoElementTdma> (m_ulDci->m_rnti,
-                                                                                 m_ulDci->m_format,
-                                                                                 m_ulDci->m_symStart,
-                                                                                 m_ulDci->m_numSym,
-                                                                                 m_ulDci->m_mcs,
-                                                                                 m_ulDci->m_tbSize,
-                                                                                 m_ulDci->m_ndi,
-                                                                                 m_ulDci->m_rv,
-                                                                                 m_ulDci->m_type,
-                                                                                 m_ulDci -> m_bwpIndex,
-                                                                                 m_ulDci->m_harqProcess,
-                                                                                 m_ulDci->m_rbgBitmask,
-                                                                                 m_ulDci->m_tpc);
+  if (m_cgScheduling) {
+    NS_LOG_INFO("DCI 받음");
+    m_dciGranted_stored[cg_slot_counter_DCI] = std::make_shared <DciInfoElementTdma> (m_ulDci->m_rnti,
+                                                                                m_ulDci->m_format,
+                                                                                m_ulDci->m_symStart,
+                                                                                m_ulDci->m_numSym,
+                                                                                m_ulDci->m_mcs,
+                                                                                m_ulDci->m_tbSize,
+                                                                                m_ulDci->m_ndi,
+                                                                                m_ulDci->m_rv,
+                                                                                m_ulDci->m_type,
+                                                                                m_ulDci -> m_bwpIndex,
+                                                                                m_ulDci->m_harqProcess,
+                                                                                m_ulDci->m_rbgBitmask,
+                                                                                m_ulDci->m_tpc);
+    uint8_t streamId = 0;
+    SfnSf dataSfn_cg = m_currentSlot;
+    uint8_t number_slots_for_processing_configurationPeriod = 5;
+    uint8_t numberOfSlot_insideOneSubframe = pow(2,(m_currentSlot.GetNumerology ()));
+    m_configurationTime = GetConfigurationTime();
+    uint8_t number_slots_configuration = (GetConfigurationTime()*numberOfSlot_insideOneSubframe)-number_slots_for_processing_configurationPeriod;
+    dataSfn_cg.Add(number_slots_configuration);
+    uint64_t key = dataSfn_cg.GetEncForStreamWithSymStart (streamId, m_dciGranted_stored[cg_slot_counter_DCI]->m_symStart);
 
-      uint8_t streamId = 0;
-      SfnSf dataSfn_cg = m_currentSlot;
-      uint8_t number_slots_for_processing_configurationPeriod = 5;
-      uint8_t numberOfSlot_insideOneSubframe = pow(2,(m_currentSlot.GetNumerology ()));
-      m_configurationTime = GetConfigurationTime();
-      uint8_t number_slots_configuration = (GetConfigurationTime()*numberOfSlot_insideOneSubframe)-number_slots_for_processing_configurationPeriod;
-      dataSfn_cg.Add(number_slots_configuration);
-      uint64_t key = dataSfn_cg.GetEncForStreamWithSymStart (streamId, m_dciGranted_stored[cg_slot_counter_DCI]->m_symStart);
+    auto it_1 = m_dci_cg_map.find (key);
 
-      auto it_1 = m_dci_cg_map.find (key);
-
-      if (it_1 == m_dci_cg_map.end ())
-        {
-          it_1 = m_dci_cg_map.insert (std::make_pair (key, m_dciGranted_stored[cg_slot_counter_DCI])).first;
-          cg_slot_counter_DCI = cg_slot_counter_DCI +1;
-        }
+    if (it_1 == m_dci_cg_map.end ()) {
+      it_1 = m_dci_cg_map.insert (std::make_pair (key, m_dciGranted_stored[cg_slot_counter_DCI])).first;
+      cg_slot_counter_DCI = cg_slot_counter_DCI +1;
     }
+  }
 
   m_macRxedCtrlMsgsTrace (m_currentSlot, GetCellId (), m_rnti, GetBwpId (), dciMsg);
 

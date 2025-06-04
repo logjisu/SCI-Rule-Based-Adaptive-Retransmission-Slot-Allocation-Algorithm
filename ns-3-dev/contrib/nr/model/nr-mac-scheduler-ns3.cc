@@ -2669,15 +2669,8 @@ NrMacSchedulerNs3::DoSchedUlCgrInfoReq (const NrMacSchedSapProvider::SchedUlCgrI
      if (i < params.m_ageList.size()) // ageList와 크기 일치 여부 확인
      {
        SetAge(ue, params.m_ageList[i]);
-       // UeAgeMap[ue] = params.m_ageList[i];
-       //NS_LOG_INFO("UE " << ue << "의 Age 값: " << UeAgeMap[ue] << "\tNS3 기본 스케줄러");
      }
      
-     // auto it = std::find (m_srList.begin(), m_srList.end(), ue);
-     // if (it == m_srList.end())
-     // {
-     //   m_srList.push_back (ue);
-     // }
    }
 
  for (const auto & buf : params.m_bufCgr)

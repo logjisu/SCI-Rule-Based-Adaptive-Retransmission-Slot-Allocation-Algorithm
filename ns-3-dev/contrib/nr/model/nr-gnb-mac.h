@@ -85,13 +85,28 @@
     */
    virtual ~NrGnbMac (void) override;
 
-   void StartPeriodicAgeUpdate();
-   void IncrementAgeOnNoPacket(uint16_t rnti, uint32_t deadlineMs);
+   void StartPeriodicAgeUpdate(uint16_t tti, uint32_t deadline);
+   void IncrementAgeOnNoPacket(uint16_t rnti, uint32_t deadline);
    void ResetAgeOnPacketProcessed(uint16_t rnti);
-   void PeriodicAgeUpdate();
+   void PeriodicAgeUpdate(uint16_t tti, uint32_t deadline);
+   struct AgeEntry {
+    uint32_t priority;
+    uint64_t age;
+    uint32_t count;
+   };
    void ActivateUe(uint16_t rnti);
    void DeactivateUe(uint16_t rnti);
    std::set<uint16_t> m_activeUes;
+   std::map<uint16_t,bool> m_cgrConfigured;   // UE별로 CG가 활성화되었는지
+   std::map<uint16_t,SfnSf> m_nextCgrSlot;    // UE별 다음 CG 전송 시점을 저장할 맵
+   std::map<uint16_t,uint8_t> m_posCgrIndex;  // UE별 posCG 인덱스도 맵으로 관리
+   struct CgrParams {
+    uint32_t bufSize;
+    uint8_t  traffP;
+    Time     traffInit;
+    Time     traffDeadline;
+   };
+   std::map<uint16_t, CgrParams> m_cgrParams;     // RNTI별 CG 파라미터
    /**
     * \brief Sets the number of RBs per RBG. Currently it can be 
     * configured by the user, while in the future it will be configured 
@@ -179,7 +194,9 @@
    void SetEnbCmacSapUser (LteEnbCmacSapUser* s);
  
    void PrintAverageThroughput ();
- 
+   void PrintAverageAoI ();
+   void DoAddUe (uint16_t rnti);
+   void DoRemoveUe (uint16_t rnti);
  
    /**
    * \brief Get the gNB-ComponentCarrierManager SAP User
@@ -323,8 +340,8 @@
    void DoCschedCellConfigUpdateInd (NrMacCschedSapUser::CschedCellConfigUpdateIndParameters params);
    // forwarded from LteEnbCmacSapProvider
    void DoConfigureMac (uint16_t ulBandwidth, uint16_t dlBandwidth);
-   void DoAddUe (uint16_t rnti);
-   void DoRemoveUe (uint16_t rnti);
+  //  void DoAddUe (uint16_t rnti);
+  //  void DoRemoveUe (uint16_t rnti);
    void DoAddLc (LteEnbCmacSapProvider::LcInfo lcinfo, LteMacSapUser* msu);
    void DoReconfigureLc (LteEnbCmacSapProvider::LcInfo lcinfo);
    void DoReleaseLc (uint16_t  rnti, uint8_t lcid);
